@@ -369,13 +369,64 @@ function parseAiResponse(responseText) {
     }
 }
 
-
 app.get('/', (req, res) => {
-    res.json({
-        status: 'API is running',
-        aiProvider: AI_PROVIDER,
-        usage: 'POST /api/search with { "keyword": "your search term" }'
-    });
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Product Search API</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        input { padding: 10px; width: 300px; font-size: 16px; }
+        button { padding: 10px 20px; font-size: 16px; background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        #results { margin-top: 20px; white-space: pre-wrap; background: #f5f5f5; padding: 15px; border-radius: 5px; }
+        .product { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; }
+        .product img { max-width: 100px; height: auto; }
+        .loading { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Product Search API</h1>
+    <p>Enter a keyword to search for products:</p>
+    <input type="text" id="keyword" placeholder="e.g. bumper stickers" />
+    <button onclick="search()">Search</button>
+    <div id="results"></div>
+    <script>
+        async function search() {
+            const keyword = document.getElementById('keyword').value;
+            const results = document.getElementById('results');
+            if (!keyword) { alert('Please enter a keyword'); return; }
+            results.innerHTML = '<p class="loading">Searching... (this may take 30-60 seconds)</p>';
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keyword })
+                });
+                const data = await response.json();
+                if (data.products && data.products.length > 0) {
+                    let html = '<h3>Found ' + data.totalProducts + ' products:</h3>';
+                    data.products.forEach(p => {
+                        html += '<div class="product">';
+                        if (p.imageUrl) html += '<img src="' + p.imageUrl + '" onerror="this.style.display=\\'none\\'" />';
+                        html += '<h4>' + p.title + '</h4>';
+                        if (p.price) html += '<p>Price: $' + p.price + '</p>';
+                        if (p.productUrl) html += '<p><a href="' + p.productUrl + '" target="_blank">View Product</a></p>';
+                        html += '</div>';
+                    });
+                    results.innerHTML = html;
+                } else {
+                    results.innerHTML = '<p>No products found.</p>';
+                }
+            } catch (error) {
+                results.innerHTML = '<p style="color:red">Error: ' + error.message + '</p>';
+            }
+        }
+    </script>
+</body>
+</html>
+    `);
 });
 
 
@@ -393,4 +444,5 @@ app.listen(PORT, () => {
     console.log(`\n Usage: POST http://localhost:${PORT}/api/search`);
     console.log(`   Body: { "keyword": "bumper stickers" }\n`);
 });
+
 
