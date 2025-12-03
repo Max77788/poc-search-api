@@ -2,11 +2,8 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const puppeteer = require('puppeteer-core');
 
-
-puppeteer.use(StealthPlugin());
 
 const app = express();
 app.use(cors());
@@ -139,11 +136,14 @@ async function googleSearch(keyword) {
 async function fetchWithPuppeteer(url) {
     if (!browser) {
         browser = await puppeteer.launch({
-            headless: 'new',
+            headless: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-blink-features=AutomationControlled'
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--single-process'
             ]
         });
     }
@@ -393,3 +393,4 @@ app.listen(PORT, () => {
     console.log(`\n Usage: POST http://localhost:${PORT}/api/search`);
     console.log(`   Body: { "keyword": "bumper stickers" }\n`);
 });
+
