@@ -1,12 +1,13 @@
-FROM ghcr.io/puppeteer/puppeteer:23.0.0
+FROM ghcr.io/puppeteer/puppeteer:21.5.0
 
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+
+# Пропускаємо завантаження хрома, бо він вже є в образі
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+RUN npm ci
 
-WORKDIR /app
-COPY package.json ./
-RUN npm install --production
 COPY . .
 
-EXPOSE 8080
-CMD ["node", "server.js"]
+CMD [ "node", "index.js" ]
