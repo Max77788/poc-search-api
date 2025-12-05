@@ -385,11 +385,12 @@ async function parseHtmlWithAI(html, url, keyword) {
 
     console.log(`   📝 Sending ${truncatedHtml.length} chars to AI`);
 
-    const prompt = `Extract products from this e-commerce page.
+    const prompt = `Extract products from this e-commerce page that are specifically "${keyword}".
 
-SEARCH: "${keyword}"
+IMPORTANT: Only include products that ARE "${keyword}" or contain "${keyword}" in the name.
+DO NOT include other types of stickers, labels, or unrelated products.
 
-Extract for each product:
+Extract for each matching product:
 - title: product name
 - price: number or null
 - currency: "AUD"
@@ -398,6 +399,8 @@ Extract for each product:
 
 Return JSON array (max 30 products):
 [{"title":"...","price":9.99,"currency":"AUD","imageUrl":"...","productUrl":"..."}]
+
+If no matching products found, return: []
 
 HTML:
 ${truncatedHtml}`;
@@ -517,5 +520,6 @@ app.listen(PORT, () => {
     console.log(` AI Provider: ${AI_PROVIDER}`);
     console.log(` Region: Australia\n`);
 });
+
 
 
