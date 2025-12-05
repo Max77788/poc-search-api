@@ -229,34 +229,19 @@ app.post('/api/search', async (req, res) => {
         const allProducts = [];
         const seenTitles = new Set();
 
-        for (let i = 0; i < urls.length; i += 2) {
-            const batch = urls.slice(i, i + 2);
+       for (let i = 0; i < urls.length; i++) {
+            const url = urls[i];
+            const siteIndex = i + 1;
             
-            const results = await Promise.all(
-                batch.map(async (url, j) => {
-                    const siteIndex = i + j + 1;
-                    console.log(`\n📄 [${siteIndex}/${urls.length}] Processing: ${url}`);
-                    sendEvent('processing', { site: url, siteIndex, totalSites: urls.length });
+            console.log(`\n📄 [${siteIndex}/${urls.length}] Processing: ${url}`);
+            sendEvent('processing', { site: url, siteIndex, totalSites: urls.length });
 
-                    try {
-                        const html = await fetchWithPuppeteer(url);
-                        const products = await parseHtmlWithAI(html, url, keyword);
-                        return { url, products, siteIndex };
-                    } catch (error) {
-                        console.log(`   ❌ Failed: ${error.message}`);
-                        return { url, products: [], siteIndex, error: error.message };
-                    }
-                })
-            );
-
-            for (const result of results) {
-                if (result.error) {
-                    sendEvent('error', { site: result.url, error: result.error });
-                    continue;
-                }
+            try {
+                const html = await fetchWithPuppeteer(url);
+                const products = await parseHtmlWithAI(html, url, keyword);
 
                 const newProducts = [];
-                for (const product of result.products) {
+                for (const product of products) {
                     const normalizedTitle = product.title.toLowerCase().trim();
                     if (!seenTitles.has(normalizedTitle)) {
                         seenTitles.add(normalizedTitle);
@@ -266,13 +251,16 @@ app.post('/api/search', async (req, res) => {
                 }
 
                 if (newProducts.length > 0) {
-                    console.log(`   ✅ [${result.siteIndex}] Found ${newProducts.length} new products`);
+                    console.log(`   ✅ Found ${newProducts.length} new products`);
                     sendEvent('products', {
-                        site: result.url,
+                        site: url,
                         newProducts,
                         totalSoFar: allProducts.length
                     });
                 }
+            } catch (error) {
+                console.log(`   ❌ Failed: ${error.message}`);
+                sendEvent('error', { site: url, error: error.message });
             }
         }
 
@@ -520,6 +508,7 @@ app.listen(PORT, () => {
     console.log(` AI Provider: ${AI_PROVIDER}`);
     console.log(` Region: Australia\n`);
 });
+
 
 
 
