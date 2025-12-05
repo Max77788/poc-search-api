@@ -310,90 +310,27 @@ async function googleSearch(keyword) {
     return urls;
 }
 
-// ============ FETCH WITH PUPPETEER ============
-let browser = null;
+// ============ FETCH PAGE (без Puppeteer) ============
+async function fetchPage(url) {
+    try {
+        const response = await axios.get(url, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            },
+            maxRedirects: 5
+        });
 
-async function fetchWithPuppeteer(url) {
-    const maxRetries = 2;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            // Створюємо браузер якщо немає
-            if (!browser || !browser.isConnected()) {
-                const args = [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--disable-extensions',
-                    '--single-process',
-                    '--no-zygote',
-                    '--no-first-run',
-                    '--disable-background-networking',
-                    '--disable-default-apps',
-                    '--disable-sync',
-                    '--disable-translate',
-                    '--hide-scrollbars',
-                    '--metrics-recording-only',
-                    '--mute-audio',
-                    '--safebrowsing-disable-auto-update'
-                ];
-
-                browser = await puppeteer.launch({
-                    headless: 'new',
-                    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
-                    args
-                });
-            }
-
-            const page = await browser.newPage();
-
-            try {
-                await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-                
-                await page.setRequestInterception(true);
-                page.on('request', (req) => {
-                    const blocked = ['image', 'stylesheet', 'font', 'media'];
-                    if (blocked.includes(req.resourceType())) {
-                        req.abort();
-                    } else {
-                        req.continue();
-                    }
-                });
-
-                const response = await page.goto(url, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 20000
-                });
-
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                const html = await page.content();
-                console.log(`   📊 Status: ${response?.status() || 0}, HTML: ${html.length} chars`);
-
-                await page.close();
-                return html;
-            } catch (pageError) {
-                await page.close().catch(() => {});
-                throw pageError;
-            }
-        } catch (error) {
-            console.log(`   ⚠️ Attempt ${attempt} failed: ${error.message}`);
-            
-            // Закриваємо браузер перед retry
-            if (browser) {
-                await browser.close().catch(() => {});
-                browser = null;
-            }
-            
-            if (attempt === maxRetries) {
-                throw error;
-            }
-            
-            // Пауза перед retry
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+        console.log(`   📊 Status: ${response.status}, HTML: ${response.data.length} chars`);
+        return response.data;
+    } catch (error) {
+        console.log(`   ❌ Fetch failed: ${error.message}`);
+        throw error;
     }
 }
 
@@ -539,6 +476,7 @@ app.listen(PORT, () => {
     console.log(` AI Provider: ${AI_PROVIDER}`);
     console.log(` Region: Australia\n`);
 });
+
 
 
 
