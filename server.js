@@ -14,19 +14,19 @@ app.use(cors());
 app.use(express.json());
 
 // === CONFIG ===
-const CONCURRENCY = 5; 
-const PAGE_TIMEOUT = 12000;
+const CONCURRENCY = 3; // ЗМЕНШЕНО з 5 до 3 для production
+const PAGE_TIMEOUT = 20000; // ЗБІЛЬШЕНО з 12s до 20s
 const AI_PROVIDER = process.env.OPENAI_API_KEY ? 'openai' : 'gemini';
 
 // Стоп-слова (абсолютне табу)
 const BLACKLIST = [
     'cremation', 'funeral', 'burial', 'service', 'consultation', 'booking', 
     'course', 'workshop', 'seminar', 'hire', 'rental', 'deposit', 'donation',
-    'login', 'account', 'cart', 'checkout', 'register'
+    'login', 'account', 'cart', 'checkout', 'register', 'subscription'
 ];
 
-// Слова, які ігноруємо при перевірці збігів (надто загальні)
-const STOP_WORDS = ['the', 'and', 'for', 'with', 'buy', 'shop', 'online', 'australia', 'best', 'top', 'cheap', 'sale', 'custom'];
+// ВИПРАВЛЕНО: видалено "custom" та інші важливі слова
+const STOP_WORDS = ['the', 'and', 'for', 'with', 'australia', 'best', 'top'];
 
 let openai = null;
 if (process.env.OPENAI_API_KEY) {
@@ -36,7 +36,7 @@ if (process.env.OPENAI_API_KEY) {
 
 console.log(`🚀 SMART SEARCH: ${AI_PROVIDER.toUpperCase()} | Precision Level: HIGH`);
 
-// ============ UI ============
+// ============ UI (без змін) ============
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -194,7 +194,14 @@ app.post('/api/search', async (req, res) => {
         
         browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--disable-gpu', '--blink-settings=imagesEnabled=false']
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox', 
+                '--disable-dev-shm-usage', 
+                '--disable-accelerated-2d-canvas', 
+                '--disable-gpu'
+                // ВИДАЛЕНО: --blink-settings=imagesEnabled=false (деякі сайти потребують images для завантаження)
+            ]
         });
 
         send('progress', { msg: `Scanning ${topUrls.length} sites...`, done: 0, total: topUrls.length });
@@ -209,7 +216,7 @@ app.post('/api/search', async (req, res) => {
                 try {
                     await processSite(browser, url, keyword, send);
                 } catch (e) {
-                    // console.log(e);
+                    console.error(`Error processing ${url}:`, e.message);
                 } finally {
                     completed++;
                     send('progress', { msg: `Processing...`, done: completed, total: topUrls.length });
@@ -223,6 +230,7 @@ app.post('/api/search', async (req, res) => {
         send('done', {});
 
     } catch (e) {
+        console.error('Search error:', e);
         send('progress', { msg: 'Error: ' + e.message });
     } finally {
         if (browser) await browser.close().catch(() => {});
@@ -235,17 +243,18 @@ async function processSite(browser, url, keyword, send) {
     try {
         page = await browser.newPage();
         
+        // ВИПРАВЛЕНО: дозволяємо images (деякі сайти не працюють без них)
         await page.setRequestInterception(true);
         page.on('request', req => {
-            if (['image', 'font', 'media', 'stylesheet', 'other'].includes(req.resourceType())) req.abort();
+            if (['font', 'media', 'other'].includes(req.resourceType())) req.abort();
             else req.continue();
         });
 
         await page.setUserAgent(new UserAgent({ deviceCategory: 'desktop' }).toString());
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT });
 
-        // Важливо! Даємо сторінці трохи подумати, щоб JS відпрацював
-        await new Promise(r => setTimeout(r, 1500)); 
+        // Wait for JS
+        await new Promise(r => setTimeout(r, 2000)); // ЗБІЛЬШЕНО з 1.5s до 2s
 
         const html = await page.content();
         await page.close();
@@ -276,14 +285,12 @@ async function processSite(browser, url, keyword, send) {
         });
 
         // --- PHASE 2: AI FALLBACK ---
-        // Якщо JSON-LD дав мало результатів (< 3), пробуємо AI
-        if (products.length < 3) {
-            // Smart Cleaning
+        // ВИПРАВЛЕНО: викликаємо AI якщо < 2 products (було < 3)
+        if (products.length < 2) {
             $('script, style, noscript, svg, iframe, header, footer, nav, .menu, .sidebar, .popup, .hidden, [aria-hidden="true"]').remove();
             
-            // Text compression
             const body = $('body').html() || '';
-            const truncated = body.replace(/\s+/g, ' ').substring(0, 80000); // 80k символів!
+            const truncated = body.replace(/\s+/g, ' ').substring(0, 100000); // ЗБІЛЬШЕНО до 100k
 
             if (truncated.length > 500) {
                 const aiProducts = await parseWithAI(truncated, url, keyword);
@@ -291,7 +298,7 @@ async function processSite(browser, url, keyword, send) {
             }
         }
 
-        // --- PHASE 3: THE SMART FILTER ---
+        // --- PHASE 3: SMART FILTER (ВИПРАВЛЕНИЙ) ---
         const unique = new Map();
         
         products.forEach(p => {
@@ -302,29 +309,41 @@ async function processSite(browser, url, keyword, send) {
             const titleLower = p.title.toLowerCase();
             if (BLACKLIST.some(bad => titleLower.includes(bad))) return;
 
-            // 2. SMART KEYWORD MATCHING
-            // Розбиваємо запит на токени
+            // 2. ПОКРАЩЕНИЙ KEYWORD MATCHING
             const queryTokens = keyword.toLowerCase()
-                .replace(/[^a-z0-9 ]/g, '') // тільки літери і цифри
+                .replace(/[^a-z0-9 ]/g, '')
                 .split(' ')
                 .filter(t => t.length > 2 && !STOP_WORDS.includes(t));
 
-            // Якщо запит був специфічний (наприклад "bumper stickers"), а не просто "stickers"
-            // то вимагаємо збігу хоча б 50% слів
-            let matchCount = 0;
-            queryTokens.forEach(token => {
-                if (titleLower.includes(token)) matchCount++;
-            });
+            // НОВА ЛОГІКА: більш м'який підхід
+            if (queryTokens.length === 0) {
+                // Занадто короткий запит - пропускаємо все
+                // skip smart filter
+            } else if (queryTokens.length === 1) {
+                // Один токен - вимагаємо щоб він був в title
+                const token = queryTokens[0];
+                if (!titleLower.includes(token)) {
+                    // Перевіряємо синоніми
+                    const synonyms = getSynonyms(token);
+                    if (!synonyms.some(syn => titleLower.includes(syn))) {
+                        return; // Не пройшов
+                    }
+                }
+            } else {
+                // Декілька токенів - вимагаємо хоча б 33% збіг (було 50%)
+                let matchCount = 0;
+                queryTokens.forEach(token => {
+                    if (titleLower.includes(token)) matchCount++;
+                    else {
+                        // Перевіряємо синоніми
+                        const synonyms = getSynonyms(token);
+                        if (synonyms.some(syn => titleLower.includes(syn))) matchCount++;
+                    }
+                });
 
-            // Логіка пропуску:
-            // Якщо токенів > 1, вимагаємо збіг мінімум 50%
-            // Якщо токенів 1, вимагаємо точний збіг
-            let isValid = false;
-            if (queryTokens.length === 0) isValid = true; // Занадто короткий запит, пропускаємо все
-            else if (queryTokens.length === 1) isValid = matchCount >= 1;
-            else isValid = (matchCount / queryTokens.length) >= 0.5; // Хоча б половина слів
-
-            if (!isValid) return;
+                const threshold = 0.33; // ЗМЕНШЕНО з 0.5 до 0.33
+                if ((matchCount / queryTokens.length) < threshold) return;
+            }
 
             // 3. Normalize Price
             if (!p.price) p.price = 'Check Site';
@@ -336,8 +355,25 @@ async function processSite(browser, url, keyword, send) {
         });
 
     } catch (e) {
+        console.error(`processSite error for ${url}:`, e.message);
         if(page) await page.close().catch(() => {});
     }
+}
+
+// НОВА ФУНКЦІЯ: синоніми для кращого matching
+function getSynonyms(word) {
+    const synonymMap = {
+        'sticker': ['decal', 'label', 'adhesive'],
+        'decal': ['sticker', 'label'],
+        'label': ['sticker', 'tag'],
+        'card': ['cards'],
+        'banner': ['banners', 'sign', 'signage'],
+        'print': ['printing', 'printed'],
+        'custom': ['personalised', 'personalized', 'bespoke'],
+        'vinyl': ['pvc'],
+        'business': ['corporate', 'company']
+    };
+    return synonymMap[word] || [];
 }
 
 function extractFromJson(item, list, baseUrl) {
@@ -368,19 +404,33 @@ function extractFromJson(item, list, baseUrl) {
 }
 
 async function parseWithAI(html, url, keyword) {
+    // ПОКРАЩЕНИЙ ПРОМПТ
     const prompt = `
-    Analyze HTML from "${url}". Extract PRODUCTS matching "${keyword}".
-    
-    Rules:
-    1. FILTER IRRELEVANT: If item is "Custom Cremation Package" and keyword is "sticker", SKIP IT.
-    2. GRID ONLY: Look for the main product list.
-    3. PRICE: Extract specific price (e.g. "$19.95"). If missing, null.
-    4. IMAGE: Must be valid absolute URL.
-    
-    Return JSON: [{"title":"...","price":"...","imageUrl":"...","productUrl":"..."}]
-    
-    HTML: ${html}
-    `;
+You are a product extraction AI. Extract ALL e-commerce products from this HTML that match the keyword "${keyword}".
+
+STRICT RULES:
+1. ONLY products for sale (not services, courses, consultations)
+2. ONLY items semantically related to "${keyword}"
+3. Must have: title, image URL, product URL
+4. Price: Extract if visible (e.g. "$19.95" or "$19.95 AUD"). If missing, use null
+5. Image URL: MUST be absolute URL (starts with http:// or https://)
+6. Product URL: MUST be absolute URL
+
+Return ONLY valid JSON array (no markdown, no explanation):
+[
+  {
+    "title": "exact product name",
+    "price": "$19.95 AUD" or null,
+    "imageUrl": "https://...",
+    "productUrl": "https://..."
+  }
+]
+
+If no products found, return empty array: []
+
+HTML:
+${html}
+    `.trim();
 
     try {
         let content;
@@ -388,17 +438,25 @@ async function parseWithAI(html, url, keyword) {
             const completion = await openai.chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [{ role: 'user', content: prompt }],
-                temperature: 0, max_tokens: 3000
+                temperature: 0,
+                max_tokens: 4000 // ЗБІЛЬШЕНО з 3000
             });
             content = completion.choices[0].message.content;
         } else {
             const resp = await axios.post(
                 `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                { contents: [{ parts: [{ text: prompt }] }] }
+                { 
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0,
+                        maxOutputTokens: 4000
+                    }
+                }
             );
             content = resp.data.candidates[0].content.parts[0].text;
         }
         
+        // Clean JSON
         const json = content.replace(/```json|```/gi, '').trim();
         const start = json.indexOf('[');
         const end = json.lastIndexOf(']');
@@ -412,8 +470,12 @@ async function parseWithAI(html, url, keyword) {
             price: p.price,
             imageUrl: normalizeUrl(p.imageUrl, baseUrl),
             productUrl: normalizeUrl(p.productUrl, baseUrl)
-        }));
-    } catch { return []; }
+        })).filter(p => p.imageUrl && p.productUrl); // Фільтруємо invalid URLs
+        
+    } catch (e) {
+        console.error('AI parsing error:', e.message);
+        return [];
+    }
 }
 
 function normalizeUrl(urlStr, baseUrl) {
@@ -429,16 +491,20 @@ function normalizeUrl(urlStr, baseUrl) {
 async function googleSearch(keyword) {
     const key = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
-    // Жорсткий фільтр на рівні Google
-    const q = encodeURIComponent(`${keyword} (shop OR buy) -cremation -funeral -hire -course -service -pinterest -facebook site:.au`);
+    
+    // СПРОЩЕНИЙ QUERY (видалено (shop OR buy))
+    const q = encodeURIComponent(`${keyword} -cremation -funeral -hire -course -pinterest -facebook site:.au`);
     
     try {
         const res = await axios.get(`https://www.googleapis.com/customsearch/v1?key=${key}&cx=${cx}&q=${q}&num=10`);
         return (res.data.items || [])
             .map(i => i.link)
-            .filter(l => !l.includes('facebook') && !l.includes('youtube'));
-    } catch { return []; }
+            .filter(l => !l.includes('facebook') && !l.includes('youtube') && !l.includes('pinterest'));
+    } catch (e) {
+        console.error('Google search error:', e.message);
+        return [];
+    }
 }
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Server: ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
