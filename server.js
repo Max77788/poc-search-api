@@ -276,18 +276,57 @@ async function googleSearch(keyword) {
 
 // ============ AI PARSING ============
 async function parseHtmlWithAI(html, url, keyword) {
-    const cleaned = html
+    // Агресивна очистка HTML
+    let cleaned = html
+        // Видаляємо скрипти, стилі
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
         .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+        .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
+        // Видаляємо header, footer, nav, aside
+        .replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, '')
+        .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, '')
+        .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, '')
+        .replace(/<aside\b[^<]*(?:(?!<\/aside>)<[^<]*)*<\/aside>/gi, '')
+        // Видаляємо коментарі та SVG
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '')
+        // Видаляємо атрибути class, style, data-*
+        .replace(/\s(class|style|data-[a-z-]+)="[^"]*"/gi, '')
+        // Пробіли
         .replace(/\s+/g, ' ')
-        .substring(0, 70000);
+        .trim();
 
-    console.log(`   📝 Sending ${cleaned.length} chars to AI`);
+    // Спробуємо знайти main контент
+    const mainMatch = cleaned.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+    if (mainMatch && mainMatch[1].length > 5000) {
+        cleaned = mainMatch[1];
+        console.log(`   📦 Using <main> content: ${cleaned.length} chars`);
+    }
 
-    const prompt = `Extract products from this page matching "${keyword}".
-Return JSON array: [{"title":"...","price":9.99,"currency":"AUD","imageUrl":"...","productUrl":"..."}]
-Only include relevant products. Max 30. If none, return [].
-HTML: ${cleaned}`;
+    // Ліміт 100k для більшого охоплення
+    const truncated = cleaned.substring(0, 100000);
+    console.log(`   📝 Sending ${truncated.length} chars to AI (from ${cleaned.length})`);
+
+    const prompt = `You are extracting products from an Australian e-commerce page.
+Search term: "${keyword}"
+
+TASK: Find ALL products on this page that match "${keyword}".
+Look for product grids, lists, cards with titles, prices, and images.
+
+For EACH product extract:
+- title: exact product name
+- price: number only (e.g., 9.99) or null if not shown
+- currency: "AUD"
+- imageUrl: full image URL (or path starting with /)
+- productUrl: full product link URL (or path starting with /)
+
+Return a JSON array with up to 30 products:
+[{"title":"Product Name","price":19.99,"currency":"AUD","imageUrl":"/img/product.jpg","productUrl":"/product/123"}]
+
+If NO products found, return: []
+
+HTML content:
+${truncated}`;
 
     try {
         let responseText;
@@ -307,19 +346,38 @@ HTML: ${cleaned}`;
             responseText = resp.data.candidates[0].content.parts[0].text;
         }
 
+        // Парсинг JSON
         const match = responseText.match(/\[[\s\S]*\]/);
-        if (!match) return [];
+        if (!match) {
+            console.log(`   ⚠️ No JSON array in response`);
+            return [];
+        }
         
-        const products = JSON.parse(match[0]);
+        let products;
+        try {
+            products = JSON.parse(match[0]);
+        } catch (e) {
+            // Спробуємо виправити JSON
+            const fixed = match[0]
+                .replace(/,\s*]/g, ']')
+                .replace(/,\s*}/g, '}')
+                .replace(/'/g, '"');
+            products = JSON.parse(fixed);
+        }
+
         const baseUrl = new URL(url).origin;
         
         return products.map(p => ({
             title: p.title,
             price: p.price || null,
             currency: 'AUD',
-            imageUrl: p.imageUrl?.startsWith('http') ? p.imageUrl : baseUrl + p.imageUrl,
-            productUrl: p.productUrl?.startsWith('http') ? p.productUrl : baseUrl + p.productUrl,
-            supplier: 'Supplier'
+            imageUrl: p.imageUrl?.startsWith('http') ? p.imageUrl : 
+                      p.imageUrl?.startsWith('//') ? 'https:' + p.imageUrl :
+                      p.imageUrl ? baseUrl + (p.imageUrl.startsWith('/') ? '' : '/') + p.imageUrl : null,
+            productUrl: p.productUrl?.startsWith('http') ? p.productUrl : 
+                        p.productUrl?.startsWith('//') ? 'https:' + p.productUrl :
+                        p.productUrl ? baseUrl + (p.productUrl.startsWith('/') ? '' : '/') + p.productUrl : url,
+            supplier: new URL(url).hostname.replace('www.', '')
         })).filter(p => p.title?.length > 3);
     } catch (e) {
         console.log(`   ⚠️ AI error: ${e.message}`);
@@ -329,3 +387,4 @@ HTML: ${cleaned}`;
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server: http://localhost:${PORT}\nAI: ${AI_PROVIDER}\n`));
+
