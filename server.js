@@ -13,9 +13,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// === CONFIGURATION ===
+// === CONFIG ===
 const CONCURRENCY = 5; 
-const PAGE_TIMEOUT = 15000; // Трохи збільшив для надійності
+const PAGE_TIMEOUT = 15000;
 const AI_PROVIDER = process.env.OPENAI_API_KEY ? 'openai' : 'gemini';
 
 let openai = null;
@@ -26,7 +26,7 @@ if (process.env.OPENAI_API_KEY) {
 
 console.log(`Provider: ${AI_PROVIDER} | Threads: ${CONCURRENCY}`);
 
-// ============ HTML UI ============
+// ============ UI ============
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -34,39 +34,42 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Search</title>
+    <title>AU Search API</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; padding: 20px; max-width: 1200px; margin: 0 auto; }
-        .search-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; gap: 10px; }
-        input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
-        button { padding: 12px 24px; background: #0052cc; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
-        button:disabled { background: #b3bac5; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; padding: 20px; max-width: 1200px; margin: 0 auto; color: #1c1e21; }
+        .search-box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 24px; display: flex; gap: 12px; }
+        input { flex: 1; padding: 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; transition: border 0.2s; }
+        input:focus { border-color: #1877f2; }
+        button { padding: 14px 32px; background: #1877f2; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 16px; transition: background 0.2s; }
+        button:hover { background: #166fe5; }
+        button:disabled { background: #bcc0c4; cursor: not-allowed; }
         
-        .status-bar { margin-bottom: 10px; font-size: 14px; color: #555; display: flex; justify-content: space-between; }
-        .progress-bg { height: 4px; background: #dfe1e6; width: 100%; margin-bottom: 20px; }
-        .progress-fill { height: 100%; background: #0052cc; width: 0%; transition: width 0.3s; }
+        .status-bar { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; color: #65676b; font-weight: 500; }
+        .progress-track { height: 6px; background: #e4e6eb; border-radius: 3px; overflow: hidden; margin-bottom: 24px; }
+        .progress-fill { height: 100%; background: #1877f2; width: 0%; transition: width 0.3s ease-out; }
 
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; }
-        .card { background: white; border-radius: 8px; overflow: hidden; border: 1px solid #ebecf0; display: flex; flex-direction: column; transition: transform 0.2s; }
-        .card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        .img-wrap { height: 180px; padding: 10px; display: flex; align-items: center; justify-content: center; background: #fff; border-bottom: 1px solid #f0f0f0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.1); display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #f0f2f5; }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
+        .img-area { height: 200px; padding: 15px; display: flex; align-items: center; justify-content: center; background: #fff; border-bottom: 1px solid #f0f2f5; }
         .card img { max-width: 100%; max-height: 100%; object-fit: contain; }
-        .info { padding: 15px; flex: 1; display: flex; flex-direction: column; }
-        .domain { font-size: 11px; text-transform: uppercase; color: #6b778c; font-weight: 700; margin-bottom: 5px; }
-        .title { font-size: 14px; margin-bottom: 8px; font-weight: 500; color: #172b4d; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .price { font-size: 18px; font-weight: 700; color: #00875a; margin-top: auto; }
-        .link-btn { margin-top: 12px; display: block; text-align: center; background: #f4f5f7; color: #172b4d; text-decoration: none; padding: 10px; border-radius: 4px; font-size: 13px; font-weight: 500; transition: background 0.2s; }
-        .link-btn:hover { background: #ebecf0; }
+        .content { padding: 16px; flex: 1; display: flex; flex-direction: column; }
+        .site { font-size: 11px; text-transform: uppercase; color: #65676b; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.5px; }
+        .title { font-size: 15px; margin-bottom: 8px; font-weight: 600; line-height: 1.4; color: #050505; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .price { font-size: 18px; font-weight: 700; color: #216fdb; margin-top: auto; }
+        .actions { margin-top: 16px; }
+        .btn-view { display: block; text-align: center; background: #e4e6eb; color: #050505; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: 0.2s; }
+        .btn-view:hover { background: #d8dadf; }
     </style>
 </head>
 <body>
     <div class="search-box">
-        <input type="text" id="keyword" placeholder="Enter product name..." onkeypress="if(event.key==='Enter') run()">
+        <input type="text" id="keyword" placeholder="Search for products in Australia..." onkeypress="if(event.key==='Enter') run()">
         <button onclick="run()" id="btn">Search</button>
     </div>
     
-    <div class="status-bar"><span id="status">Ready</span><span id="counter">0 products</span></div>
-    <div class="progress-bg"><div class="progress-fill" id="progress"></div></div>
+    <div class="status-bar"><span id="status">Ready</span><span id="counter">0 found</span></div>
+    <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
     <div id="results" class="grid"></div>
 
     <script>
@@ -82,8 +85,8 @@ app.get('/', (req, res) => {
             
             btn.disabled = true;
             results.innerHTML = '';
-            progress.style.width = '5%';
-            status.textContent = 'Searching...';
+            progress.style.width = '2%';
+            status.textContent = 'Initializing search...';
             
             let count = 0;
 
@@ -118,27 +121,29 @@ app.get('/', (req, res) => {
                                 
                                 if(data.type === 'product') {
                                     count++;
-                                    counter.textContent = count + ' products';
+                                    counter.textContent = count + ' found';
                                     const p = data.p;
                                     const domain = new URL(p.productUrl).hostname.replace('www.','');
                                     
                                     results.insertAdjacentHTML('beforeend', \`
                                         <div class="card">
-                                            <div class="img-wrap">
-                                                <img src="\${p.imageUrl}" loading="lazy" onerror="this.style.display='none'">
+                                            <div class="img-area">
+                                                <img src="\${p.imageUrl}" onerror="this.src='https://placehold.co/400?text=No+Image'">
                                             </div>
-                                            <div class="info">
-                                                <div class="domain">\${domain}</div>
+                                            <div class="content">
+                                                <div class="site">\${domain}</div>
                                                 <div class="title" title="\${p.title}">\${p.title}</div>
-                                                <div class="price">\${p.price || 'Check Price'}</div>
-                                                <a href="\${p.productUrl}" target="_blank" class="link-btn">View Product</a>
+                                                <div class="price">\${p.price || 'See Website'}</div>
+                                                <div class="actions">
+                                                    <a href="\${p.productUrl}" target="_blank" class="btn-view">View Product</a>
+                                                </div>
                                             </div>
                                         </div>
                                     \`);
                                 }
                                 
                                 if(data.type === 'done') {
-                                    status.textContent = 'Search complete.';
+                                    status.textContent = 'Search complete';
                                     progress.style.width = '100%';
                                     btn.disabled = false;
                                 }
@@ -169,7 +174,7 @@ app.post('/api/search', async (req, res) => {
 
     let browser = null;
     try {
-        send('progress', { msg: 'Google Search...', done: 0, total: 10 });
+        send('progress', { msg: 'Searching Google...', done: 0, total: 10 });
         
         const [browserInstance, urls] = await Promise.all([
             puppeteer.launch({
@@ -193,24 +198,21 @@ app.post('/api/search', async (req, res) => {
             return res.end();
         }
 
-        // Обробляємо топ 10 сайтів
         const topUrls = urls.slice(0, 10);
-        
         let completed = 0;
         const queue = [...topUrls];
         
-        // Воркер для черги
         const worker = async () => {
             while (queue.length > 0) {
                 const url = queue.shift();
                 try {
                     await processSite(browser, url, keyword, send);
                 } catch (e) {
-                    // console.error(`Failed ${url}: ${e.message}`);
+                    // console.log(`Skipping ${url}: ${e.message}`);
                 } finally {
                     completed++;
                     send('progress', { 
-                        msg: `Processing sites...`, 
+                        msg: `Scanning sites (${completed}/${topUrls.length})...`, 
                         done: completed, 
                         total: topUrls.length 
                     });
@@ -218,7 +220,6 @@ app.post('/api/search', async (req, res) => {
             }
         };
 
-        // Запускаємо потоки
         const workers = Array(CONCURRENCY).fill(null).map(() => worker());
         await Promise.all(workers);
 
@@ -232,21 +233,18 @@ app.post('/api/search', async (req, res) => {
     }
 });
 
-// ============ SITE PROCESSOR ============
+// ============ PROCESSOR ============
 async function processSite(browser, url, keyword, send) {
     let page = null;
     try {
         page = await browser.newPage();
         
-        // Блокуємо ресурси (КРІМ СКРИПТІВ - вони потрібні для цін і посилань на багатьох SPA сайтах)
+        // Block heavy media but KEEP SCRIPTS (needed for dynamic prices)
         await page.setRequestInterception(true);
         page.on('request', req => {
             const type = req.resourceType();
-            if (['image', 'font', 'media', 'stylesheet'].includes(type)) {
-                req.abort();
-            } else {
-                req.continue();
-            }
+            if (['image', 'font', 'media'].includes(type)) req.abort();
+            else req.continue();
         });
 
         const ua = new UserAgent({ deviceCategory: 'desktop' });
@@ -254,10 +252,12 @@ async function processSite(browser, url, keyword, send) {
 
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT });
 
-        // Скрол для активації лінків і цін
+        // Scroll to load dynamic content
         await page.evaluate(async () => {
-            window.scrollBy(0, 1000);
-            await new Promise(r => setTimeout(r, 300));
+            window.scrollBy(0, 800);
+            await new Promise(r => setTimeout(r, 200));
+            window.scrollBy(0, 800);
+            await new Promise(r => setTimeout(r, 200));
         });
 
         const html = await page.content();
@@ -275,54 +275,55 @@ async function processSite(browser, url, keyword, send) {
     }
 }
 
-// ============ AI LOGIC (IMPROVED) ============
+// ============ AI LOGIC ============
 async function parseWithAI(html, url, keyword) {
     const $ = cheerio.load(html);
 
-    // 1. ВИДАЛЯЄМО СМІТТЯ (але обережно з nav/menu, бо там бувають категорії)
-    $('script, style, noscript, svg, iframe, footer').remove();
-    // Видаляємо явні блоки "Related", "You may like", щоб прибрати нерелевантність
-    $('.related, .recommendations, .upsell, .cross-sell, .recent-viewed').remove();
+    // 1. Remove ONLY strict garbage. Keep 'divs' and 'spans' intact.
+    $('script, style, noscript, svg, iframe, header, footer').remove();
     
-    // 2. ФІКС КАРТИНОК (Lazy Load)
+    // 2. Fix Images
     $('img').each((i, el) => {
         const $el = $(el);
         const realSrc = $el.attr('data-src') || $el.attr('lazy-src') || $el.attr('data-srcset');
         if (realSrc) $el.attr('src', realSrc.split(' ')[0]);
     });
 
-    // 3. ПІДГОТОВКА ДЛЯ AI
-    // Не видаляємо всі атрибути, бо class допомагає AI знайти ціну (.price, .amount)
-    // Просто обрізаємо дуже довгі атрибути (типу base64 або tracking data)
+    // 3. Attribute pruning (Keep classes for context!)
     $('*').each((i, el) => {
         if(el.type === 'tag') {
             const attribs = el.attribs || {};
+            // Keep class, id, src, href. Remove huge data attributes.
             for(const key in attribs) {
-                if(attribs[key].length > 200 && key !== 'src' && key !== 'href') {
+                if(!['class','id','src','href'].includes(key) && attribs[key].length > 100) {
                     delete attribs[key];
                 }
             }
         }
     });
 
-    let body = $('body').html() || '';
-    // Ліміт 50к символів
-    const truncated = body.replace(/\s+/g, ' ').substring(0, 50000);
+    // Extract BODY content
+    const bodyHtml = $('body').html() || '';
+    // Limit to 50k chars (approx 12-15k tokens), fits in GPT-4o-mini
+    const truncated = bodyHtml.replace(/\s+/g, ' ').substring(0, 50000);
 
     const prompt = `
-    Analyze HTML from "${url}".
-    Extract products matching keyword: "${keyword}".
+    Analyze this HTML from "${url}".
+    Extract products matching: "${keyword}".
 
-    STRICT RULES:
-    1. RELEVANCE: Ignore items that do not match the keyword (e.g. if searching for "iphone", ignore "case" or "cable" unless it's the main item).
-    2. LINKS: You MUST return the Full Absolute URL. If the link in HTML is relative (e.g. "/product/123"), prepend the base domain.
-    3. PRICE: Look carefully for prices in <span>, <div>, or <b> tags. Format: "$20.00". If multiple prices, take the main/lowest. If missing, null.
-    4. IMAGE: Must be a valid URL.
+    Instructions:
+    1. FIND THE MAIN GRID: Look for lists of items with images, titles, and prices.
+    2. RELEVANCE: Include items that are relevant variations of the keyword. 
+       - If user wants "iphone", include "iphone 13", "iphone 14 pro".
+       - EXCLUDE "cases", "cables" unless keyword explicitly asks for accessories.
+    3. LINKS: Ensure 'productUrl' is the FULL absolute URL (e.g. start with https://...).
+    4. PRICE: Extract price text (e.g. "$19.99"). If missing, set null.
+    5. IMAGE: Must be a valid image URL.
 
-    Return JSON Array:
+    Return JSON:
     [{"title":"...","price":"...","imageUrl":"...","productUrl":"..."}]
     
-    HTML Snippet:
+    HTML:
     ${truncated}
     `;
 
@@ -332,7 +333,7 @@ async function parseWithAI(html, url, keyword) {
             const completion = await openai.chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [{ role: 'user', content: prompt }],
-                temperature: 0,
+                temperature: 0, 
                 max_tokens: 4000
             });
             content = completion.choices[0].message.content;
@@ -347,27 +348,17 @@ async function parseWithAI(html, url, keyword) {
         const json = content.replace(/```json|```/gi, '').trim();
         const start = json.indexOf('[');
         const end = json.lastIndexOf(']');
-        
         if (start === -1) return [];
         
         const raw = JSON.parse(json.substring(start, end + 1));
         const baseUrl = new URL(url).origin;
 
-        // Фільтрація і Нормалізація
         return raw.map(p => ({
             title: p.title,
             price: p.price,
             imageUrl: normalizeUrl(p.imageUrl, baseUrl),
             productUrl: normalizeUrl(p.productUrl, baseUrl)
-        })).filter(p => {
-            // Фільтруємо сміття
-            if (!p.title || !p.productUrl || !p.imageUrl) return false;
-            // Перевірка на релевантність (базова)
-            const kWords = keyword.toLowerCase().split(' ');
-            const titleLower = p.title.toLowerCase();
-            // Хоча б одне слово з запиту має бути в назві (окрім прийменників)
-            return kWords.some(w => w.length > 2 && titleLower.includes(w));
-        });
+        })).filter(p => p.imageUrl && p.productUrl && p.title);
 
     } catch (e) {
         return [];
@@ -375,42 +366,30 @@ async function parseWithAI(html, url, keyword) {
 }
 
 function normalizeUrl(urlStr, baseUrl) {
-    if (!urlStr || urlStr.startsWith('data:') || urlStr.startsWith('javascript:')) return null;
+    if (!urlStr || urlStr.startsWith('data:')) return null;
     try {
-        // Очищаємо пробіли
         urlStr = urlStr.trim();
-        
-        // Якщо це просто шлях, додаємо базу
-        if (urlStr.startsWith('/')) {
-            return new URL(urlStr, baseUrl).href;
-        }
-        // Якщо немає протоколу
-        if (urlStr.startsWith('www.')) {
-            return 'https://' + urlStr;
-        }
-        // Якщо це повний URL, перевіряємо валідність
-        if (urlStr.startsWith('http')) {
-            return new URL(urlStr).href;
-        }
-        // В інших випадках (наприклад relative path без слеша)
+        if (urlStr.startsWith('//')) return 'https:' + urlStr;
+        if (urlStr.startsWith('http')) return urlStr;
+        // Fix relative paths
+        if (urlStr.startsWith('/')) return new URL(urlStr, baseUrl).href;
+        // Fix paths without slash
         return new URL(urlStr, baseUrl).href;
-    } catch { 
-        return null; 
-    }
+    } catch { return null; }
 }
 
 async function googleSearch(keyword) {
     const key = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
-    // Додаємо "product" щоб уникнути статей блогів
-    const q = encodeURIComponent(`${keyword} product australia`);
+    // Більш широкий запит для магазинів
+    const q = encodeURIComponent(`${keyword} buy online australia`);
     try {
         const res = await axios.get(`https://www.googleapis.com/customsearch/v1?key=${key}&cx=${cx}&q=${q}&num=10&gl=au`);
         return (res.data.items || [])
             .map(i => i.link)
-            .filter(l => !l.includes('facebook.com') && !l.includes('youtube.com') && !l.includes('instagram.com'));
+            .filter(l => !l.includes('facebook') && !l.includes('youtube') && !l.includes('wiki'));
     } catch { return []; }
 }
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+app.listen(PORT, () => console.log(`Server: ${PORT}`));
