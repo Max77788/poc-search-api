@@ -13,6 +13,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// === CONFIG ===
 const CONCURRENCY = 5;
 const PAGE_TIMEOUT = 15000;
 const MAX_SITES = 20;
@@ -43,8 +44,9 @@ if (process.env.OPENAI_API_KEY) {
     openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-console.log(`🚀 AU SEARCH: ${AI_PROVIDER.toUpperCase()} | 1 per site | Top ${MAX_SITES}`);
+console.log(`🚀 AU SEARCH FIXED: ${AI_PROVIDER.toUpperCase()} | Top ${MAX_SITES}`);
 
+// ============ UI ============
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -61,25 +63,19 @@ app.get('/', (req, res) => {
         button { padding: 14px 32px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { background: #2563eb; }
         button:disabled { background: #94a3b8; cursor: not-allowed; }
-        
         .status-bar { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; color: #64748b; font-weight: 500; }
         .progress-track { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin-bottom: 24px; }
         .progress-fill { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
-
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
         .card { background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; display: flex; flex-direction: column; transition: transform 0.2s; position: relative; }
         .card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-        
         .img-wrap { height: 220px; padding: 10px; display: flex; align-items: center; justify-content: center; background: #fff; border-bottom: 1px solid #f1f5f9; position: relative; }
         .card img { max-width: 100%; max-height: 100%; object-fit: contain; }
         .badge { position: absolute; top: 10px; left: 10px; font-size: 10px; background: rgba(59,130,246,0.9); padding: 4px 8px; border-radius: 4px; color: white; font-weight: bold; }
-        
         .info { padding: 16px; flex: 1; display: flex; flex-direction: column; }
         .title { font-size: 14px; margin-bottom: 8px; font-weight: 600; color: #0f172a; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        
         .meta-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; min-height: 24px; }
         .tag { font-size: 11px; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; color: #475569; font-weight: 500; }
-        
         .price { font-size: 20px; font-weight: 700; color: #16a34a; margin-top: auto; }
         .btn-link { margin-top: 12px; text-align: center; background: #f8fafc; color: #334155; text-decoration: none; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; transition: 0.2s; border: 1px solid #e2e8f0; }
         .btn-link:hover { background: #e2e8f0; color: #0f172a; }
@@ -91,7 +87,7 @@ app.get('/', (req, res) => {
         <button onclick="run()" id="btn">Search</button>
     </div>
     
-    <div class="status-bar"><span id="status">Ready</span><span id="counter">0 products from 0 sites</span></div>
+    <div class="status-bar"><span id="status">Ready</span><span id="counter">0 products</span></div>
     <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
     <div id="results" class="grid"></div>
 
@@ -109,7 +105,7 @@ app.get('/', (req, res) => {
             btn.disabled = true;
             results.innerHTML = '';
             progress.style.width = '2%';
-            status.textContent = 'Searching Australian sites...';
+            status.textContent = 'Searching...';
             
             let productCount = 0;
             let siteCount = 0;
@@ -143,8 +139,7 @@ app.get('/', (req, res) => {
                                 
                                 if(data.type === 'product') {
                                     productCount++;
-                                    siteCount++;
-                                    counter.textContent = \`\${productCount} products from \${siteCount} sites\`;
+                                    counter.textContent = \`\${productCount} products found\`;
                                     const p = data.p;
                                     const domain = new URL(p.productUrl).hostname.replace('www.','');
                                     const sizeHtml = p.size ? \`<div class="tag">📏 \${p.size}</div>\` : '';
@@ -153,7 +148,7 @@ app.get('/', (req, res) => {
                                         <div class="card">
                                             <div class="img-wrap">
                                                 <div class="badge">\${domain}</div>
-                                                <img src="\${p.imageUrl}" loading="lazy" onerror="this.src='https://placehold.co/400x400/e2e8f0/64748b?text=No+Image'">
+                                                <img src="\${p.imageUrl}" loading="lazy" onerror="this.src='https://placehold.co/400?text=No+Image'">
                                             </div>
                                             <div class="info">
                                                 <div class="title" title="\${p.title}">\${p.title}</div>
@@ -161,12 +156,11 @@ app.get('/', (req, res) => {
                                                 <div class="price">\${p.price}</div>
                                                 <a href="\${p.productUrl}" target="_blank" class="btn-link">View Product</a>
                                             </div>
-                                        </div>
-                                    \`);
+                                        </div>\`);
                                 }
                                 
                                 if(data.type === 'done') {
-                                    status.textContent = \`Complete! Scanned \${data.total} Australian sites.\`;
+                                    status.textContent = \`Complete! Scanned \${data.total} sites.\`;
                                     progress.style.width = '100%';
                                     btn.disabled = false;
                                 }
@@ -185,6 +179,7 @@ app.get('/', (req, res) => {
     `);
 });
 
+// ============ API ============
 app.post('/api/search', async (req, res) => {
     const { keyword } = req.body;
     
@@ -196,18 +191,17 @@ app.post('/api/search', async (req, res) => {
 
     let browser = null;
     try {
-        send('progress', { msg: 'Searching Google for Australian sites...', done: 0, total: 20 });
+        send('progress', { msg: 'Google Search (Australia)...', done: 0, total: 20 });
         
+        // 1. Google Search (FIXED)
         const urls = await googleSearch(keyword);
         
         if (urls.length === 0) {
-            send('progress', { msg: 'No Australian sites found' });
+            send('progress', { msg: 'No sites found via Google' });
             send('done', { total: 0 });
             return res.end();
         }
 
-        console.log(`Found ${urls.length} URLs`);
-        
         const topUrls = urls.slice(0, MAX_SITES);
         
         browser = await puppeteer.launch({
@@ -228,19 +222,14 @@ app.post('/api/search', async (req, res) => {
         const worker = async () => {
             while (queue.length > 0) {
                 const url = queue.shift();
-                
                 try {
                     const domain = new URL(url).hostname;
-                    
-                    if (processedDomains.has(domain)) {
-                        completed++;
-                        continue;
-                    }
+                    if (processedDomains.has(domain)) continue;
                     processedDomains.add(domain);
                     
                     await processSite(browser, url, keyword, send);
                 } catch (e) {
-                    console.error(`Error processing ${url}:`, e.message);
+                    // Ignore URL errors
                 } finally {
                     completed++;
                     send('progress', { msg: `Scanning...`, done: completed, total: topUrls.length });
@@ -254,70 +243,14 @@ app.post('/api/search', async (req, res) => {
         send('done', { total: completed });
 
     } catch (e) {
-        console.error('Search error:', e);
+        console.error('API Error:', e);
         send('progress', { msg: 'Error: ' + e.message });
     } finally {
         if (browser) await browser.close().catch(() => {});
         res.end();
     }
 });
-async function googleSearch(keyword) {
-    const key = process.env.GOOGLE_API_KEY;
-    const cx = process.env.GOOGLE_CX;
-    
-    if (!key || !cx) {
-        console.error('Missing API credentials');
-        return [];
-    }
-    
-    const fetchPage = async (start) => {
-        try {
-            const params = {
-                key: key,
-                cx: cx,
-                q: keyword,
-                num: 10,
-                start: start
-            };
-            
-            console.log(`Fetching page ${start}...`);
-            const res = await axios.get('https://www.googleapis.com/customsearch/v1', { params });
-            
-            const items = res.data.items || [];
-            console.log(`Page ${start}: ${items.length} results`);
-            
-            return items;
-        } catch (e) {
-            console.error(`API error:`, e.response?.data?.error || e.message);
-            return [];
-        }
-    };
 
-    try {
-        console.log(`Searching: "${keyword}"`);
-        
-        const [page1, page2] = await Promise.all([
-            fetchPage(1),
-            fetchPage(11)
-        ]);
-        
-        let results = [...page1, ...page2];
-        console.log(`Total: ${results.length} results`);
-        
-        const blocked = ['facebook.com', 'youtube.com', 'pinterest.com', 'instagram.com', 'reddit.com', 'wikipedia.org'];
-        
-        const validUrls = results
-            .map(i => i.link)
-            .filter(link => !blocked.some(b => link.includes(b)));
-        
-        console.log(`Valid: ${validUrls.length} sites`);
-        return validUrls;
-            
-    } catch (e) {
-        console.error('Search error:', e.message);
-        return [];
-    }
-}
 async function processSite(browser, url, keyword, send) {
     let page = null;
     try {
@@ -332,19 +265,15 @@ async function processSite(browser, url, keyword, send) {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT });
         await new Promise(r => setTimeout(r, 1000));
 
+        // Витягуємо опції (Safe exec)
         const hiddenOptions = await page.evaluate(() => {
-            const opts = [];
-            document.querySelectorAll('select option, .variant, .swatch, .size-box, [class*="size"]').forEach(el => {
-                const text = el.innerText || el.textContent || '';
-                if(text && text.length < 50) opts.push(text);
-            });
-            document.querySelectorAll('td, th, .spec, .specification').forEach(el => {
-                const text = el.innerText || el.textContent || '';
-                if(/size|dim|mm|cm|inch|width|height|length/i.test(text) && text.length < 100) {
-                    opts.push(text);
-                }
-            });
-            return opts.join(', ').substring(0, 1000);
+            try {
+                const opts = [];
+                document.querySelectorAll('select option, .variant, .swatch, .size-box').forEach(el => {
+                    if(el.innerText && el.innerText.length < 50) opts.push(el.innerText);
+                });
+                return opts.join(', ').substring(0, 800);
+            } catch(e) { return ""; }
         });
 
         const html = await page.content();
@@ -355,41 +284,37 @@ async function processSite(browser, url, keyword, send) {
         const baseUrl = new URL(url).origin;
         let candidates = [];
 
+        // --- PHASE 1: JSON-LD ---
         $('script[type="application/ld+json"]').each((i, el) => {
             try {
                 const json = JSON.parse($(el).html());
                 const items = Array.isArray(json) ? json : [json];
                 items.forEach(item => {
                     const type = item['@type'];
-                    if (type === 'Product' || type === 'ItemPage') {
-                        extractFromJson(item, candidates, baseUrl);
-                    }
-                    if (item['@graph']) {
-                        item['@graph'].forEach(g => {
-                            if (g['@type'] === 'Product') extractFromJson(g, candidates, baseUrl);
-                        });
-                    }
+                    if (type === 'Product' || type === 'ItemPage') extractFromJson(item, candidates, baseUrl);
+                    if (item['@graph']) item['@graph'].forEach(g => {
+                        if (g['@type'] === 'Product') extractFromJson(g, candidates, baseUrl);
+                    });
                 });
             } catch (e) {}
         });
 
+        // --- PHASE 2: AI FALLBACK ---
         if (candidates.length === 0) {
-            $('script, style, noscript, svg, iframe, header, footer, nav, .popup, .modal').remove();
+            $('script, style, noscript, svg, iframe, header, footer, nav, .popup').remove();
             let body = $('body').html() || '';
             
-            if (hiddenOptions) {
-                body += `\n<meta hidden-sizes="${hiddenOptions}">`;
-            }
+            if (hiddenOptions) body += `\n`;
             
-            const truncated = body.replace(/\s+/g, ' ').substring(0, 70000);
+            const truncated = body.replace(/\s+/g, ' ').substring(0, 60000);
             if (truncated.length > 500) {
                 const aiRes = await parseWithAI(truncated, url, keyword);
                 candidates = [...candidates, ...aiRes];
             }
         }
 
+        // --- PHASE 3: FILTER ---
         const validProducts = [];
-        
         candidates.forEach(p => {
             if (!p.title || !p.imageUrl || !p.productUrl) return;
             if (p.title.length < 3) return;
@@ -397,21 +322,14 @@ async function processSite(browser, url, keyword, send) {
             const titleLower = p.title.toLowerCase();
             if (BLACKLIST.some(bad => titleLower.includes(bad))) return;
 
-            const queryWords = keyword.toLowerCase()
-                .replace(/[^a-z0-9 ]/g, '')
-                .split(' ')
-                .filter(t => t.length > 2 && !STOP_WORDS.includes(t));
-            
+            // Synonym Matching
+            const queryWords = keyword.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(' ').filter(t => t.length > 2 && !STOP_WORDS.includes(t));
             let matchCount = 0;
+
             queryWords.forEach(qWord => {
                 let found = false;
-                if (titleLower.includes(qWord)) {
-                    found = true;
-                } else if (SYNONYMS[qWord]) {
-                    if (SYNONYMS[qWord].some(syn => titleLower.includes(syn))) {
-                        found = true;
-                    }
-                }
+                if (titleLower.includes(qWord)) found = true;
+                else if (SYNONYMS[qWord] && SYNONYMS[qWord].some(syn => titleLower.includes(syn))) found = true;
                 if (found) matchCount++;
             });
 
@@ -422,42 +340,20 @@ async function processSite(browser, url, keyword, send) {
 
             if (!isValid) return;
 
-            if (!p.price || p.price === 'null') p.price = 'Check Site';
-            
+            if (!p.price) p.price = 'Check Site';
             validProducts.push(p);
         });
 
-        if (validProducts.length === 0) {
-            console.log(`No valid products found on ${url}`);
-            return;
+        if (validProducts.length > 0) {
+            validProducts.sort((a, b) => {
+                const scoreA = (a.price !== 'Check Site' ? 2 : 0) + (a.size ? 3 : 0);
+                const scoreB = (b.price !== 'Check Site' ? 2 : 0) + (b.size ? 3 : 0);
+                return scoreB - scoreA;
+            });
+            send('product', { p: validProducts[0] });
         }
 
-        validProducts.forEach(p => {
-            let score = 0;
-            
-            if (p.price !== 'Check Site' && p.size) {
-                score = 100;
-            } else if (p.price !== 'Check Site') {
-                score = 50;
-            } else if (p.size) {
-                score = 40;
-            } else {
-                score = 10;
-            }
-            
-            p._score = score;
-        });
-
-        validProducts.sort((a, b) => b._score - a._score);
-
-        const bestProduct = validProducts[0];
-        console.log(`✅ ${url} → ${bestProduct.title} (score: ${bestProduct._score})`);
-        
-        delete bestProduct._score;
-        send('product', { p: bestProduct });
-
     } catch (e) {
-        console.error(`processSite error for ${url}:`, e.message);
         if(page) await page.close().catch(() => {});
     }
 }
@@ -474,15 +370,11 @@ function extractFromJson(item, list, baseUrl) {
         else if (o.lowPrice) price = `$${o.lowPrice} ${o.priceCurrency || 'AUD'}`;
     }
 
-    if (item.size) {
-        size = item.size;
-    } else if (item.width || item.height || item.depth) {
-        const dims = [item.width, item.height, item.depth].filter(Boolean);
-        if (dims.length > 0) size = dims.join(' x ');
-    } else if (item.additionalProperty) {
+    if (item.size) size = item.size;
+    else if (item.additionalProperty) {
         const props = Array.isArray(item.additionalProperty) ? item.additionalProperty : [item.additionalProperty];
-        const sp = props.find(p => p.name && /size|dim|width|height|length/i.test(p.name));
-        if (sp && sp.value) size = sp.value;
+        const sp = props.find(p => p.name && /size|dim|width|height/i.test(p.name));
+        if (sp) size = sp.value;
     }
 
     let img = item.image;
@@ -499,31 +391,12 @@ function extractFromJson(item, list, baseUrl) {
 }
 
 async function parseWithAI(html, url, keyword) {
-    const prompt = `Extract ONE best product for "${keyword}" from this Australian e-commerce page.
-
-CRITICAL REQUIREMENTS:
-1. Must be a physical product (not service/consultation/course)
-2. Must match "${keyword}" semantically
-3. EXTRACT SIZE/DIMENSIONS if available:
-   - Physical dimensions (e.g. "100mm x 150mm", "A4", "210 x 297mm")
-   - Volume (e.g. "500ml", "1 litre")
-   - Options (e.g. "Small, Medium, Large")
-   - Paper size (e.g. "A4", "A5", "DL")
-4. EXTRACT PRICE if visible on page
-
-Return JSON (one object only):
-{
-  "title": "exact product name",
-  "price": "$XX.XX AUD" or null,
-  "size": "dimensions/size" or null,
-  "imageUrl": "https://...",
-  "productUrl": "https://..."
-}
-
-If no product found, return: {}
-
-HTML:
-${html}`;
+    const prompt = `Extract ONE best product matching "${keyword}".
+Rules:
+1. Physical products only (no courses/services)
+2. Get SIZE/DIMENSIONS (e.g. A4, 100mm, Small) from text or options.
+3. Return JSON Array: [{"title":"...","price":"...","size":"...","imageUrl":"...","productUrl":"..."}]
+HTML Context: ${html}`;
 
     try {
         let content;
@@ -531,57 +404,33 @@ ${html}`;
             const completion = await openai.chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [{ role: 'user', content: prompt }],
-                temperature: 0,
-                max_tokens: 1500
+                temperature: 0, max_tokens: 1000
             });
             content = completion.choices[0].message.content;
         } else {
             const resp = await axios.post(
                 `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                { 
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0, maxOutputTokens: 1500 }
-                },
-                { timeout: 10000 }
+                { contents: [{ parts: [{ text: prompt }] }] }
             );
             content = resp.data.candidates[0].content.parts[0].text;
         }
         
         const jsonStr = content.replace(/```json|```/gi, '').trim();
+        const start = jsonStr.indexOf('[');
+        const end = jsonStr.lastIndexOf(']');
+        if (start === -1) return [];
         
-        try {
-            const obj = JSON.parse(jsonStr);
-            if (obj.title && obj.imageUrl) {
-                const baseUrl = new URL(url).origin;
-                return [{
-                    title: obj.title,
-                    price: obj.price,
-                    size: obj.size || null,
-                    imageUrl: normalizeUrl(obj.imageUrl, baseUrl),
-                    productUrl: normalizeUrl(obj.productUrl, baseUrl)
-                }];
-            }
-        } catch (e) {
-            const start = jsonStr.indexOf('[');
-            const end = jsonStr.lastIndexOf(']');
-            if (start !== -1) {
-                const raw = JSON.parse(jsonStr.substring(start, end + 1));
-                const baseUrl = new URL(url).origin;
-                return raw.map(p => ({
-                    title: p.title,
-                    price: p.price,
-                    size: p.size || null,
-                    imageUrl: normalizeUrl(p.imageUrl, baseUrl),
-                    productUrl: normalizeUrl(p.productUrl, baseUrl)
-                }));
-            }
-        }
+        const raw = JSON.parse(jsonStr.substring(start, end + 1));
+        const baseUrl = new URL(url).origin;
         
-        return [];
-    } catch (e) {
-        console.error('AI parsing error:', e.message);
-        return [];
-    }
+        return raw.map(p => ({
+            title: p.title,
+            price: p.price,
+            size: p.size || null,
+            imageUrl: normalizeUrl(p.imageUrl, baseUrl),
+            productUrl: normalizeUrl(p.productUrl, baseUrl)
+        }));
+    } catch { return []; }
 }
 
 function normalizeUrl(urlStr, baseUrl) {
@@ -594,20 +443,24 @@ function normalizeUrl(urlStr, baseUrl) {
     } catch { return null; }
 }
 
+// === FIXED GOOGLE SEARCH ===
 async function googleSearch(keyword) {
     const key = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
     
+    // !!! ВИПРАВЛЕНО: Axios сам кодує параметри. 
+    // Якщо робити encodeURIComponent тут, буде подвійне кодування (%2520) і гугл нічого не знайде.
     const query = `${keyword} buy australia -cremation -funeral -hire -course`;
-    const q = encodeURIComponent(query);
     
     const fetchPage = async (start) => {
         try {
             const res = await axios.get('https://www.googleapis.com/customsearch/v1', {
                 params: {
-                    key, cx, q,
+                    key: key,
+                    cx: cx,
+                    q: query, // передаємо чистий рядок!
                     num: 10,
-                    start,
+                    start: start,
                     gl: 'au',
                     cr: 'countryAU',
                     safe: 'active'
@@ -615,40 +468,27 @@ async function googleSearch(keyword) {
             });
             return res.data.items || [];
         } catch (e) {
-            console.error(`Google search page ${start} error:`, e.message);
             return [];
         }
     };
 
     try {
-        console.log(`Searching: "${keyword}"`);
-        
         const [page1, page2] = await Promise.all([
             fetchPage(1),
             fetchPage(11)
         ]);
         
-        let results = [...page1, ...page2];
-        console.log(`Google returned ${results.length} results`);
+        const results = [...page1, ...page2];
+        const blocked = ['facebook', 'youtube', 'pinterest', 'instagram', 'reddit', 'wikipedia', 'linkedin'];
         
-        const blocked = ['facebook', 'youtube', 'pinterest', 'instagram', 'reddit', 'wikipedia', 'linkedin', 'twitter'];
-        const validUrls = results
+        return results
             .map(i => i.link)
-            .filter(link => {
-                const isBlocked = blocked.some(b => link.includes(b));
-                return !isBlocked;
-            });
-        
-        console.log(`Filtered to ${validUrls.length} sites`);
-        return validUrls;
+            .filter(link => !blocked.some(b => link.includes(b)));
             
     } catch (e) {
-        console.error('Google search error:', e.message);
         return [];
     }
 }
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
-
-
