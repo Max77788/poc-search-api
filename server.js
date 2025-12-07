@@ -265,61 +265,56 @@ async function googleSearch(keyword) {
     const key = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
     
-    console.log('=== GOOGLE SEARCH DEBUG ===');
-    console.log('API Key:', key ? `${key.substring(0, 10)}...` : 'MISSING');
-    console.log('CX:', cx ? `${cx.substring(0, 10)}...` : 'MISSING');
-    console.log('Keyword:', keyword);
-    
-    const query = `${keyword} buy australia -cremation -funeral -hire -course`;
-    const q = encodeURIComponent(query);
-    
-    console.log('Query:', query);
+    if (!key || !cx) {
+        console.error('Missing API credentials');
+        return [];
+    }
     
     const fetchPage = async (start) => {
         try {
-            const url = `https://www.googleapis.com/customsearch/v1?key=${key}&cx=${cx}&q=${q}&num=10&start=${start}&gl=au&cr=countryAU&safe=active`;
+            const params = {
+                key: key,
+                cx: cx,
+                q: keyword,
+                num: 10,
+                start: start
+            };
+            
             console.log(`Fetching page ${start}...`);
+            const res = await axios.get('https://www.googleapis.com/customsearch/v1', { params });
             
-            const res = await axios.get(url);
+            const items = res.data.items || [];
+            console.log(`Page ${start}: ${items.length} results`);
             
-            console.log(`Page ${start} returned:`, res.data.items?.length || 0, 'items');
-            if (res.data.items && res.data.items.length > 0) {
-                console.log('First result:', res.data.items[0].link);
-            }
-            
-            return res.data.items || [];
+            return items;
         } catch (e) {
-            console.error(`Google search page ${start} ERROR:`, e.response?.data || e.message);
+            console.error(`API error:`, e.response?.data?.error || e.message);
             return [];
         }
     };
 
     try {
+        console.log(`Searching: "${keyword}"`);
+        
         const [page1, page2] = await Promise.all([
             fetchPage(1),
             fetchPage(11)
         ]);
         
         let results = [...page1, ...page2];
-        console.log(`Total from Google: ${results.length} results`);
+        console.log(`Total: ${results.length} results`);
         
-        const blocked = ['facebook', 'youtube', 'pinterest', 'instagram', 'reddit', 'wikipedia', 'linkedin', 'twitter'];
+        const blocked = ['facebook.com', 'youtube.com', 'pinterest.com', 'instagram.com', 'reddit.com', 'wikipedia.org'];
+        
         const validUrls = results
             .map(i => i.link)
-            .filter(link => {
-                const isBlocked = blocked.some(b => link.includes(b));
-                if (isBlocked) console.log('BLOCKED:', link);
-                return !isBlocked;
-            });
+            .filter(link => !blocked.some(b => link.includes(b)));
         
-        console.log(`After filtering: ${validUrls.length} sites`);
-        console.log('Final URLs:', validUrls.slice(0, 5));
-        console.log('=== END DEBUG ===');
-        
+        console.log(`Valid: ${validUrls.length} sites`);
         return validUrls;
             
     } catch (e) {
-        console.error('Google search FATAL error:', e.message);
+        console.error('Search error:', e.message);
         return [];
     }
 }
@@ -655,4 +650,5 @@ async function googleSearch(keyword) {
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+
 
