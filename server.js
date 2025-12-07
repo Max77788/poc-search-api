@@ -516,7 +516,7 @@ function isValidProduct(p) { return p && p.title && p.imageUrl && p.productUrl; 
 async function googleSearch(keyword) {
     const key = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
-    const query = `${keyword} buy`; // Removed manual encoding
+    const query = `${keyword} buy`;
     
     const fetchPage = async (start) => {
         try {
@@ -535,3 +535,12 @@ async function googleSearch(keyword) {
         return all.map(i => i.link).filter(l => !blocked.some(b => l.includes(b)));
     } catch { return []; }
 }
+
+// ============ START SERVER ============
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`🤖 AI Provider: ${AI_PROVIDER}`);
+    console.log(`⚙️ Config: ${CONCURRENCY} workers, ${MAX_SITES} max sites`);
+});
+
