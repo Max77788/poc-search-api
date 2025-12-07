@@ -86,8 +86,7 @@ app.get('/', (req, res) => {
 </head>
 <body>
     <div class="header">
-        <h1>🇦🇺 Api</h1>
-        <p>Find products from Australian e-commerce stores</p>
+        
     </div>
     
     <div class="search-box">
@@ -780,4 +779,5 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on http://localhost:${PORT}`);
     console.log(`📊 Config: ${CONCURRENCY} workers, ${PAGE_TIMEOUT}ms timeout, ${MAX_SITES} max sites`);
 });
+
 
