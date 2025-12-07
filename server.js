@@ -38,7 +38,7 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AU Product Search</title>
+    <title>Api Product Search</title>
     <style>
         * { box-sizing: border-box; }
         body { font-family: -apple-system, system-ui, sans-serif; background: #f0f4f8; padding: 20px; max-width: 1400px; margin: 0 auto; }
@@ -86,7 +86,7 @@ app.get('/', (req, res) => {
 </head>
 <body>
     <div class="header">
-        <h1>🇦🇺 Australian Product Search</h1>
+        <h1>🇦🇺 Api</h1>
         <p>Find products from Australian e-commerce stores</p>
     </div>
     
@@ -780,3 +780,4 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on http://localhost:${PORT}`);
     console.log(`📊 Config: ${CONCURRENCY} workers, ${PAGE_TIMEOUT}ms timeout, ${MAX_SITES} max sites`);
 });
+
