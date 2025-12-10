@@ -13,10 +13,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// === CONFIG ===
-const CONCURRENCY = 5; // Оптимальний баланс для швидкості
-const PAGE_TIMEOUT = 15000;
-const MAX_SITES = 20;
+const CONCURRENCY = 8;           // Було 5 → тепер 8 для швидкості
+const PAGE_TIMEOUT = 8000;       // Було 15000 → тепер 8000
+const AI_TIMEOUT = 4000;         // Новий ліміт для AI
+const MAX_SITES = 15;            // Було 20 → тепер 15
 const AI_PROVIDER = process.env.OPENAI_API_KEY ? 'openai' : 'gemini';
 
 const PRIORITY_DOMAINS = [
@@ -34,7 +34,7 @@ const BLACKLIST = [
     'login', 'account', 'cart', 'checkout', 'register', 'subscription', 'career', 'job'
 ];
 
-const STOP_WORDS = ['the', 'and', 'for', 'with', 'australia', 'best', 'top', 'buy', 'shop', 'online', 'custom'];
+const STOP_WORDS = ['the', 'and', 'for', 'with', 'australia', 'best', 'top', 'buy', 'shop', 'online'];
 
 const SYNONYMS = {
     'package': ['box', 'mailer', 'packaging', 'bundle', 'kit', 'hamper', 'set'],
@@ -44,7 +44,8 @@ const SYNONYMS = {
     'bag': ['tote', 'pouch', 'sack'],
     'banner': ['flag', 'signage', 'sign'],
     'card': ['cards', 'cardstock'],
-    'magnet': ['magnets', 'fridge magnet']
+    'magnet': ['magnets', 'fridge magnet'],
+    'custom': ['personalised', 'personalized', 'bespoke']
 };
 
 let openai = null;
@@ -53,9 +54,8 @@ if (process.env.OPENAI_API_KEY) {
     openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-console.log(`API SEARCH v3.0: ${AI_PROVIDER.toUpperCase()} | Workers: ${CONCURRENCY}`);
+console.log(`🚀 API SEARCH v4.0 FAST: ${AI_PROVIDER.toUpperCase()} | Workers: ${CONCURRENCY} | Timeout: ${PAGE_TIMEOUT}ms`);
 
-// ============ UI ============
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -63,7 +63,7 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Search</title>
+    <title>Product Search API</title>
     <style>
         body { font-family: -apple-system, system-ui, sans-serif; background: #f8fafc; padding: 20px; max-width: 1200px; margin: 0 auto; color: #334155; }
         .header { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
@@ -91,11 +91,12 @@ app.get('/', (req, res) => {
         .price.unavailable { color: #94a3b8; font-size: 16px; }
         .btn-link { margin-top: 12px; text-align: center; background: #f8fafc; color: #334155; text-decoration: none; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; transition: 0.2s; border: 1px solid #e2e8f0; }
         .btn-link:hover { background: #e2e8f0; color: #0f172a; }
+        .timer { font-size: 12px; color: #94a3b8; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>API Search</h1>
+        <h1>Product Search API</h1>
     </div>
     
     <div class="search-box">
@@ -103,7 +104,10 @@ app.get('/', (req, res) => {
         <button onclick="run()" id="btn">Search</button>
     </div>
     
-    <div class="status-bar"><span id="status">Ready</span><span id="counter">0 products</span></div>
+    <div class="status-bar">
+        <span id="status">Ready</span>
+        <span><span id="counter">0 products</span> <span id="timer" class="timer"></span></span>
+    </div>
     <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
     <div id="results" class="grid"></div>
 
@@ -115,6 +119,7 @@ app.get('/', (req, res) => {
             const btn = document.getElementById('btn');
             const status = document.getElementById('status');
             const counter = document.getElementById('counter');
+            const timer = document.getElementById('timer');
             const progress = document.getElementById('progress');
             const results = document.getElementById('results');
             
@@ -124,7 +129,13 @@ app.get('/', (req, res) => {
             status.textContent = 'Searching...';
             
             let productCount = 0;
-            let siteCount = 0;
+            const startTime = Date.now();
+            
+            // Таймер оновлення
+            const timerInterval = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                timer.textContent = '(' + elapsed + 's)';
+            }, 100);
 
             try {
                 const response = await fetch('/api/search', {
@@ -157,29 +168,31 @@ app.get('/', (req, res) => {
                                     productCount++;
                                     const p = data.p;
                                     const domain = new URL(p.productUrl).hostname.replace('www.','');
-                                    const sizeHtml = p.size ? \`<div class="tag">Size: \${p.size}</div>\` : '';
+                                    const sizeHtml = p.size ? '<div class="tag">Size: ' + p.size + '</div>' : '';
                                     const priceClass = p.price === 'Not available' ? 'price unavailable' : 'price';
                                     
-                                    // Update counter logic if needed, or simple increment
-                                    counter.textContent = \`\${productCount} products found\`;
+                                    counter.textContent = productCount + ' products';
 
-                                    results.insertAdjacentHTML('beforeend', \`
-                                        <div class="card">
-                                            <div class="img-wrap">
-                                                <div class="badge">\${domain}</div>
-                                                <img src="\${p.imageUrl}" loading="lazy" onerror="this.src='https://placehold.co/400x400/e2e8f0/64748b?text=No+Image'">
-                                            </div>
-                                            <div class="info">
-                                                <div class="title" title="\${p.title}">\${p.title}</div>
-                                                <div class="meta-row">\${sizeHtml}</div>
-                                                <div class="\${priceClass}">\${p.price}</div>
-                                                <a href="\${p.productUrl}" target="_blank" class="btn-link">View Product</a>
-                                            </div>
-                                        </div>\`);
+                                    results.insertAdjacentHTML('beforeend', 
+                                        '<div class="card">' +
+                                            '<div class="img-wrap">' +
+                                                '<div class="badge">' + domain + '</div>' +
+                                                '<img src="' + p.imageUrl + '" loading="lazy" onerror="this.src=\\'https://placehold.co/400x400/e2e8f0/64748b?text=No+Image\\'">' +
+                                            '</div>' +
+                                            '<div class="info">' +
+                                                '<div class="title" title="' + p.title + '">' + p.title + '</div>' +
+                                                '<div class="meta-row">' + sizeHtml + '</div>' +
+                                                '<div class="' + priceClass + '">' + p.price + '</div>' +
+                                                '<a href="' + p.productUrl + '" target="_blank" class="btn-link">View Product</a>' +
+                                            '</div>' +
+                                        '</div>');
                                 }
                                 
                                 if(data.type === 'done') {
-                                    status.textContent = \`Search complete. Scanned \${data.total} sites.\`;
+                                    clearInterval(timerInterval);
+                                    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                                    status.textContent = 'Complete! Scanned ' + data.total + ' sites in ' + totalTime + 's';
+                                    timer.textContent = '';
                                     progress.style.width = '100%';
                                     btn.disabled = false;
                                 }
@@ -188,6 +201,7 @@ app.get('/', (req, res) => {
                     }
                 }
             } catch(e) {
+                clearInterval(timerInterval);
                 status.textContent = 'Error: ' + e.message;
                 btn.disabled = false;
             }
@@ -198,7 +212,6 @@ app.get('/', (req, res) => {
     `);
 });
 
-// ============ API ============
 app.post('/api/search', async (req, res) => {
     const { keyword } = req.body;
     
@@ -216,15 +229,17 @@ app.post('/api/search', async (req, res) => {
 
     let browser = null;
     const sentProducts = new Map();
+    const failedUrls = []; // Для фази 2
     
     try {
-        send('progress', { msg: 'Initializing...', done: 0, total: 20 });
+        send('progress', { msg: 'Initializing...', done: 0, total: 15 });
         
-        // Паралельний старт
+
         const [urls, browserInstance] = await Promise.all([
             googleSearch(keyword),
             puppeteer.launch({
                 headless: "new",
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
                 args: [
                     '--no-sandbox', 
                     '--disable-setuid-sandbox', 
@@ -232,7 +247,7 @@ app.post('/api/search', async (req, res) => {
                     '--disable-accelerated-2d-canvas', 
                     '--disable-gpu',
                     '--disable-web-security',
-                    '--blink-settings=imagesEnabled=false' // Блокуємо картинки для швидкості
+                    '--blink-settings=imagesEnabled=false'
                 ]
             })
         ]);
@@ -246,19 +261,18 @@ app.post('/api/search', async (req, res) => {
         }
 
         const uniqueUrls = getUniqueDomainUrls(urls, MAX_SITES);
-        
-        // СОРТУВАННЯ ЗА ПРІОРИТЕТОМ
         const { priorityUrls, regularUrls } = sortUrlsByPriority(uniqueUrls);
         const allUrls = [...priorityUrls, ...regularUrls];
         
-        send('progress', { msg: `Found ${uniqueUrls.length} sites. Scanning...`, done: 0, total: uniqueUrls.length });
+        send('progress', { msg: `Found ${uniqueUrls.length} sites`, done: 0, total: uniqueUrls.length });
 
-        let completed = 0;
-        const queue = [...allUrls];
         
-        const processNext = async () => {
-            while (queue.length > 0) {
-                const urlObj = queue.shift();
+        let completed = 0;
+        const queue1 = [...allUrls];
+        
+        const fastWorker = async () => {
+            while (queue1.length > 0) {
+                const urlObj = queue1.shift();
                 if (!urlObj) continue;
                 
                 const url = urlObj.url;
@@ -270,24 +284,62 @@ app.post('/api/search', async (req, res) => {
                 }
 
                 try {
-                    const product = await extractProductFromSite(browser, url, keyword);
+                    
+                    const product = await extractProductFast(browser, url, keyword);
                     
                     if (product && isValidProduct(product)) {
                         sentProducts.set(domain, true);
                         send('product', { p: product });
+                    } else {
+                        
+                        failedUrls.push(urlObj);
                     }
                 } catch (e) {
-                    // console.error(`Error ${url}:`, e.message);
+                    failedUrls.push(urlObj);
                 }
                 
                 completed++;
-                const pct = Math.round(10 + (completed / uniqueUrls.length) * 85);
-                send('progress', { msg: `Scanning sites...`, pct });
+                send('progress', { msg: `Phase 1: Fast scan...`, done: completed, total: uniqueUrls.length });
             }
         };
 
-        const workers = Array(CONCURRENCY).fill(null).map(() => processNext());
-        await Promise.all(workers);
+        
+        const workers1 = Array(CONCURRENCY).fill(null).map(() => fastWorker());
+        await Promise.all(workers1);
+
+        
+        if (failedUrls.length > 0 && sentProducts.size < 10) {
+            send('progress', { msg: `Phase 2: Deep scan (${failedUrls.length} sites)...`, done: completed, total: uniqueUrls.length });
+            
+            const queue2 = [...failedUrls.slice(0, 8)]; 
+            
+            const deepWorker = async () => {
+                while (queue2.length > 0) {
+                    const urlObj = queue2.shift();
+                    if (!urlObj) continue;
+                    
+                    const url = urlObj.url;
+                    const domain = getDomain(url);
+                    
+                    if (sentProducts.has(domain)) continue;
+
+                    try {
+                        
+                        const product = await extractProductDeep(browser, url, keyword);
+                        
+                        if (product && isValidProduct(product)) {
+                            sentProducts.set(domain, true);
+                            send('product', { p: product });
+                        }
+                    } catch (e) {
+                        // Silent fail
+                    }
+                }
+            };
+
+            const workers2 = Array(4).fill(null).map(() => deepWorker());
+            await Promise.all(workers2);
+        }
 
         send('done', { total: completed });
 
@@ -300,27 +352,7 @@ app.post('/api/search', async (req, res) => {
     }
 });
 
-// Функція сортування URL (Пріоритетні - наверх)
-function sortUrlsByPriority(urls) {
-    const priorityUrls = [];
-    const regularUrls = [];
-    
-    urls.forEach(url => {
-        const domain = getDomain(url);
-        const isPriority = PRIORITY_DOMAINS.some(pd => domain.includes(pd) || pd.includes(domain));
-        
-        if (isPriority) {
-            priorityUrls.push({ url, isPriority: true });
-        } else {
-            regularUrls.push({ url, isPriority: false });
-        }
-    });
-    
-    return { priorityUrls, regularUrls };
-}
-
-// Оптимізована функція екстракції
-async function extractProductFromSite(browser, url, keyword) {
+async function extractProductFast(browser, url, keyword) {
     let page = null;
     try {
         page = await browser.newPage();
@@ -328,8 +360,7 @@ async function extractProductFromSite(browser, url, keyword) {
         await page.setRequestInterception(true);
         page.on('request', req => {
             const type = req.resourceType();
-            // Залишаємо script для цін, блокуємо інше
-            if (['image', 'media', 'font', 'other'].includes(type)) {
+            if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
                 req.abort();
             } else {
                 req.continue();
@@ -337,25 +368,79 @@ async function extractProductFromSite(browser, url, keyword) {
         });
 
         await page.setUserAgent(new UserAgent({ deviceCategory: 'desktop' }).toString());
-        // Стандартний розмір екрану
-        await page.setViewport({ width: 1366, height: 768 });
         
-        // ЗМІНА 1: domcontentloaded - набагато швидше
+        // Швидка навігація
         await page.goto(url, { 
             waitUntil: 'domcontentloaded', 
             timeout: PAGE_TIMEOUT 
         });
 
-        // ЗМІНА 2: Мінімальна затримка
-        await new Promise(r => setTimeout(r, 200));
+        // Мінімальна затримка
+        await new Promise(r => setTimeout(r, 100));
 
-        // Швидкий скрол (тільки щоб тригернути JS)
-        await page.evaluate(async () => {
-            window.scrollBy(0, 800);
-            await new Promise(r => setTimeout(r, 100));
+        const html = await page.content();
+        const finalUrl = page.url();
+        await page.close();
+        page = null;
+
+        const $ = cheerio.load(html);
+        const baseUrl = new URL(finalUrl).origin;
+        
+        // Тільки JSON-LD (швидко!)
+        const jsonLdProducts = extractJsonLdProducts($, baseUrl);
+        
+        if (jsonLdProducts.length === 0) return null;
+
+        // Фільтрація
+        const validProducts = filterProducts(jsonLdProducts, keyword);
+        if (validProducts.length === 0) return null;
+
+        const best = validProducts[0];
+        return {
+            title: best.title.trim(),
+            price: best.price || 'Check Site',
+            size: best.size || null,
+            imageUrl: best.imageUrl,
+            productUrl: best.productUrl || finalUrl
+        };
+
+    } catch (e) {
+        if (page) await page.close().catch(() => {});
+        throw e;
+    }
+}
+
+async function extractProductDeep(browser, url, keyword) {
+    let page = null;
+    try {
+        page = await browser.newPage();
+        
+        await page.setRequestInterception(true);
+        page.on('request', req => {
+            const type = req.resourceType();
+            if (['image', 'media', 'font'].includes(type)) {
+                req.abort();
+            } else {
+                req.continue();
+            }
         });
 
-        // Витягуємо приховані опції
+        await page.setUserAgent(new UserAgent({ deviceCategory: 'desktop' }).toString());
+        await page.setViewport({ width: 1366, height: 768 });
+        
+        await page.goto(url, { 
+            waitUntil: 'domcontentloaded', 
+            timeout: PAGE_TIMEOUT 
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+
+        // Скрол для lazy-load
+        await page.evaluate(async () => {
+            window.scrollBy(0, 800);
+            await new Promise(r => setTimeout(r, 150));
+        });
+
         const hiddenOptions = await page.evaluate(() => {
             try {
                 const opts = [];
@@ -375,53 +460,28 @@ async function extractProductFromSite(browser, url, keyword) {
         const $ = cheerio.load(html);
         const baseUrl = new URL(finalUrl).origin;
         
+        // JSON-LD
         const jsonLdProducts = extractJsonLdProducts($, baseUrl);
         
-        // AI Fallback cleaning
+        // AI Fallback
         $('script, style, noscript, svg, iframe, header, footer, nav, .popup, .modal').remove();
         let bodyHtml = $('body').html() || '';
         
-        if (hiddenOptions) bodyHtml += `\n`;
+        if (hiddenOptions) {
+            bodyHtml += `\n<div>Available options: ${hiddenOptions}</div>`;
+        }
         
-        const cleanedHtml = bodyHtml.replace(/\s+/g, ' ').substring(0, 60000);
+        const cleanedHtml = bodyHtml.replace(/\s+/g, ' ').substring(0, 50000);
         
         let aiProducts = [];
-        // Якщо JSON-LD порожній або мало даних - запускаємо AI
-        if (jsonLdProducts.length === 0 || cleanedHtml.length > 500) {
+        if (cleanedHtml.length > 500) {
             aiProducts = await parseWithAI(cleanedHtml, finalUrl, keyword);
         }
 
         const allProducts = [...jsonLdProducts, ...aiProducts];
         if (allProducts.length === 0) return null;
 
-        // Фільтрація та сортування (як було)
-        const validProducts = allProducts
-            .filter(p => {
-                if (!p.title || p.title.length < 3) return false;
-                if (!p.imageUrl) return false;
-                const titleLower = p.title.toLowerCase();
-                if (BLACKLIST.some(bad => titleLower.includes(bad))) return false;
-                
-                const keywordLower = keyword.toLowerCase();
-                const words = keywordLower.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.includes(w));
-                
-                let match = false;
-                if (words.length === 0) match = true;
-                else {
-                    match = words.some(w => titleLower.includes(w)) || 
-                            words.some(w => SYNONYMS[w] && SYNONYMS[w].some(s => titleLower.includes(s)));
-                }
-                return match;
-            })
-            .sort((a, b) => {
-                let scoreA = 0, scoreB = 0;
-                if (a.price && a.price !== 'Check Site' && a.price !== 'Not available') scoreA += 3;
-                if (a.size) scoreA += 2;
-                if (b.price && b.price !== 'Check Site' && b.price !== 'Not available') scoreB += 3;
-                if (b.size) scoreB += 2;
-                return scoreB - scoreA;
-            });
-
+        const validProducts = filterProducts(allProducts, keyword);
         if (validProducts.length === 0) return null;
 
         const best = validProducts[0];
@@ -439,8 +499,36 @@ async function extractProductFromSite(browser, url, keyword) {
     }
 }
 
-// ... (Функції extractJsonLdProducts, parseWithAI, normalizeUrl, getDomain - залишаються без змін) ...
-// (Я дублюю їх тут для повноти коду, щоб ти міг скопіювати весь файл)
+
+function filterProducts(products, keyword) {
+    return products
+        .filter(p => {
+            if (!p.title || p.title.length < 3) return false;
+            if (!p.imageUrl) return false;
+            
+            const titleLower = p.title.toLowerCase();
+            if (BLACKLIST.some(bad => titleLower.includes(bad))) return false;
+            
+            const keywordLower = keyword.toLowerCase();
+            const words = keywordLower.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.includes(w));
+            
+            let match = false;
+            if (words.length === 0) match = true;
+            else {
+                match = words.some(w => titleLower.includes(w)) || 
+                        words.some(w => SYNONYMS[w] && SYNONYMS[w].some(s => titleLower.includes(s)));
+            }
+            return match;
+        })
+        .sort((a, b) => {
+            let scoreA = 0, scoreB = 0;
+            if (a.price && a.price !== 'Check Site' && a.price !== 'Not available') scoreA += 3;
+            if (a.size) scoreA += 2;
+            if (b.price && b.price !== 'Check Site' && b.price !== 'Not available') scoreB += 3;
+            if (b.size) scoreB += 2;
+            return scoreB - scoreA;
+        });
+}
 
 function extractJsonLdProducts($, baseUrl) {
     const products = [];
@@ -496,46 +584,63 @@ function parseJsonLdProduct(item, baseUrl) {
     if (!image) return null;
     return { title: item.name, price, size, imageUrl: normalizeUrl(image, baseUrl), productUrl: normalizeUrl(item.url || '', baseUrl) };
 }
-
 async function parseWithAI(html, url, keyword) {
     const prompt = `Extract ONE best physical product for "${keyword}" from HTML.
-Rules:
-1. Ignore services, courses.
-2. Get Size/Dim if possible.
-3. Return JSON: [{"title":"...","price":"...","size":"...","imageUrl":"...","productUrl":"..."}]
+Return JSON: [{"title":"...","price":"$X AUD","size":"...","imageUrl":"https://...","productUrl":"https://..."}]
+Rules: Ignore services/courses. Get size if available.
 HTML: ${html}`;
 
     try {
         let content;
+        
         if (AI_PROVIDER === 'openai') {
-            const completion = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0, max_tokens: 800
-            });
-            content = completion.choices[0].message.content;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT);
+            
+            try {
+                const completion = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0,
+                    max_tokens: 600
+                }, { signal: controller.signal });
+                
+                content = completion.choices[0].message.content;
+            } finally {
+                clearTimeout(timeout);
+            }
         } else {
             const resp = await axios.post(
                 `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
                 { contents: [{ parts: [{ text: prompt }] }] },
-                { timeout: 8000 }
+                { timeout: AI_TIMEOUT }
             );
             content = resp.data.candidates?.[0]?.content?.parts?.[0]?.text;
         }
         
+        if (!content) return [];
+        
         const jsonStr = content.replace(/```json|```/gi, '').trim();
         const start = jsonStr.indexOf('[');
         const end = jsonStr.lastIndexOf(']');
-        if (start === -1) return [];
+        if (start === -1 || end === -1) return [];
+        
         const raw = JSON.parse(jsonStr.substring(start, end + 1));
         const baseUrl = new URL(url).origin;
+        
         return raw.map(p => ({
-            title: p.title, price: p.price, size: p.size,
+            title: p.title,
+            price: p.price,
+            size: p.size,
             imageUrl: normalizeUrl(p.imageUrl, baseUrl),
             productUrl: normalizeUrl(p.productUrl, baseUrl)
-        }));
-    } catch { return []; }
+        })).filter(p => p.title && p.imageUrl);
+        
+    } catch (e) {
+        return [];
+    }
 }
+
 
 function normalizeUrl(urlStr, baseUrl) {
     if (!urlStr || typeof urlStr !== 'string' || urlStr.startsWith('data:')) return null;
@@ -548,18 +653,48 @@ function normalizeUrl(urlStr, baseUrl) {
     } catch { return null; }
 }
 
-function getDomain(url) { try { return new URL(url).hostname.replace('www.', ''); } catch { return url; } }
+function getDomain(url) {
+    try { return new URL(url).hostname.replace('www.', ''); }
+    catch { return url; }
+}
+
 function getUniqueDomainUrls(urls, max) {
     const seen = new Set();
     const unique = [];
     for (const url of urls) {
         const d = getDomain(url);
-        if (!seen.has(d)) { seen.add(d); unique.push(url); if (unique.length >= max) break; }
+        if (!seen.has(d)) {
+            seen.add(d);
+            unique.push(url);
+            if (unique.length >= max) break;
+        }
     }
     return unique;
 }
-function isValidProduct(p) { return p && p.title && p.imageUrl && p.productUrl; }
 
+function sortUrlsByPriority(urls) {
+    const priorityUrls = [];
+    const regularUrls = [];
+    
+    urls.forEach(url => {
+        const domain = getDomain(url);
+        const isPriority = PRIORITY_DOMAINS.some(pd => domain.includes(pd) || pd.includes(domain));
+        
+        if (isPriority) {
+            priorityUrls.push({ url, isPriority: true });
+        } else {
+            regularUrls.push({ url, isPriority: false });
+        }
+    });
+    
+    return { priorityUrls, regularUrls };
+}
+
+function isValidProduct(p) {
+    return p && p.title && p.imageUrl && p.productUrl;
+}
+
+// GOOGLE SEARCH 
 async function googleSearch(keyword) {
     const key = process.env.GOOGLE_API_KEY;
     const cx = process.env.GOOGLE_CX;
@@ -569,7 +704,7 @@ async function googleSearch(keyword) {
         try {
             const res = await axios.get('https://www.googleapis.com/customsearch/v1', {
                 params: { key, cx, q: query, num: 10, start, gl: 'au', cr: 'countryAU' },
-                timeout: 6000
+                timeout: 5000
             });
             return res.data.items || [];
         } catch { return []; }
@@ -583,5 +718,9 @@ async function googleSearch(keyword) {
     } catch { return []; }
 }
 
+// ============ START SERVER ============
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Server: ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`⚡ Optimized: ${CONCURRENCY} workers, ${PAGE_TIMEOUT}ms timeout, ${MAX_SITES} sites`);
+});
